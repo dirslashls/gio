@@ -51,7 +51,7 @@ type GPU interface {
 }
 
 type gpu struct {
-	cache *resourceCache
+	cache *textureCache
 
 	profile                                string
 	timers                                 *timers
@@ -359,7 +359,7 @@ func NewWithDevice(d driver.Device) (GPU, error) {
 
 func newGPU(ctx driver.Device) (*gpu, error) {
 	g := &gpu{
-		cache: newResourceCache(),
+		cache: newTextureCache(),
 	}
 	g.drawOps.pathCache = newOpCache()
 	if err := g.init(ctx); err != nil {
@@ -425,9 +425,9 @@ func (g *gpu) frame(target RenderTarget) error {
 	g.stencilTimer.end()
 	g.coverTimer.begin()
 	g.renderer.uploadImages(g.cache, g.drawOps.imageOps)
-	g.renderer.prepareDrawOps(g.cache, g.drawOps.imageOps)
+	g.renderer.prepareDrawOps(g.drawOps.imageOps)
 	g.drawOps.layers = g.renderer.packLayers(g.drawOps.layers)
-	g.renderer.drawLayers(g.cache, g.drawOps.layers, g.drawOps.imageOps)
+	g.renderer.drawLayers(g.drawOps.layers, g.drawOps.imageOps)
 	d := driver.LoadDesc{
 		ClearColor: g.drawOps.clearColor,
 	}
@@ -437,7 +437,7 @@ func (g *gpu) frame(target RenderTarget) error {
 	}
 	g.ctx.BeginRenderPass(defFBO, d)
 	g.ctx.Viewport(0, 0, viewport.X, viewport.Y)
-	g.renderer.drawOps(g.cache, false, image.Point{}, g.renderer.blitter.viewport, g.drawOps.imageOps)
+	g.renderer.drawOps(false, image.Point{}, g.renderer.blitter.viewport, g.drawOps.imageOps)
 	g.coverTimer.end()
 	g.ctx.EndRenderPass()
 	g.cleanupTimer.begin()
@@ -460,12 +460,8 @@ func (g *gpu) Profile() string {
 	return g.profile
 }
 
-func (r *renderer) texHandle(cache *resourceCache, data imageOpData) driver.Texture {
-	type cachekey struct {
-		filter byte
-		handle any
-	}
-	key := cachekey{
+func (r *renderer) texHandle(cache *textureCache, data imageOpData) driver.Texture {
+	key := textureCacheKey{
 		filter: data.filter,
 		handle: data.handle,
 	}
@@ -853,7 +849,7 @@ func (r *renderer) packLayers(layers []opacityLayer) []opacityLayer {
 	return layers
 }
 
-func (r *renderer) drawLayers(cache *resourceCache, layers []opacityLayer, ops []imageOp) {
+func (r *renderer) drawLayers(layers []opacityLayer, ops []imageOp) {
 	if len(r.layers.sizes) == 0 {
 		return
 	}
@@ -876,7 +872,7 @@ func (r *renderer) drawLayers(cache *resourceCache, layers []opacityLayer, ops [
 		}
 		r.ctx.Viewport(v.Min.X, v.Min.Y, v.Max.X, v.Max.Y)
 		f := r.layerFBOs.fbos[fbo]
-		r.drawOps(cache, true, l.clip.Min.Mul(-1), l.clip.Size(), ops[l.opStart:l.opEnd])
+		r.drawOps(true, l.clip.Min.Mul(-1), l.clip.Size(), ops[l.opStart:l.opEnd])
 		sr := f32.FRect(v)
 		uvScale, uvOffset := texSpaceTransform(sr, f.size)
 		uvTrans := f32.Affine2D{}.Scale(f32.Point{}, uvScale).Offset(uvOffset)
@@ -1211,7 +1207,7 @@ func (d *drawState) materialFor(rect f32.Rectangle, off f32.Point, partTrans f32
 	return m
 }
 
-func (r *renderer) uploadImages(cache *resourceCache, ops []imageOp) {
+func (r *renderer) uploadImages(cache *textureCache, ops []imageOp) {
 	for i := range ops {
 		img := &ops[i]
 		m := img.material
@@ -1221,7 +1217,7 @@ func (r *renderer) uploadImages(cache *resourceCache, ops []imageOp) {
 	}
 }
 
-func (r *renderer) prepareDrawOps(cache *resourceCache, ops []imageOp) {
+func (r *renderer) prepareDrawOps(ops []imageOp) {
 	for _, img := range ops {
 		m := img.material
 		switch m.material {
@@ -1242,7 +1238,7 @@ func (r *renderer) prepareDrawOps(cache *resourceCache, ops []imageOp) {
 	}
 }
 
-func (r *renderer) drawOps(cache *resourceCache, isFBO bool, opOff image.Point, viewport image.Point, ops []imageOp) {
+func (r *renderer) drawOps(isFBO bool, opOff image.Point, viewport image.Point, ops []imageOp) {
 	var coverTex driver.Texture
 	for i := 0; i < len(ops); i++ {
 		img := ops[i]

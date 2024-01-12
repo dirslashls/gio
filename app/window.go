@@ -904,6 +904,7 @@ func (w *Window) processEvent(d driver, e event.Event) bool {
 		w.decorations.Config = e2.Config
 		e2.Config = w.effectiveConfig()
 		w.out <- e2
+	case wakeupEvent:
 	case event.Event:
 		handled := w.queue.q.Queue(e2)
 		if e, ok := e.(key.Event); ok && !handled {
@@ -1035,9 +1036,9 @@ func (w *Window) decorate(d driver, e system.FrameEvent, o *op.Ops) (size, offse
 		Metric:      e.Metric,
 		Constraints: layout.Exact(e.Size),
 	}
-	style.Layout(gtx)
 	// Update the window based on the actions on the decorations.
 	w.Perform(deco.Update(gtx))
+	style.Layout(gtx)
 	// Offset to place the frame content below the decorations.
 	decoHeight := gtx.Dp(w.decorations.Config.decoHeight)
 	if w.decorations.currentHeight != decoHeight {
